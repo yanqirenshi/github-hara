@@ -1,8 +1,8 @@
-# github.el
+# github-hara
 
 GitHub を操作するための Emacs パッケージ。
 
-現在は GitHub GraphQL API (v4) を使ったリポジトリの一括クローン機能を提供する。すべての処理は非同期で実行されるため、Emacs を通常通り操作できる。
+現在は GitHub GraphQL API (v4) を使ったリポジトリの同期機能を提供する。未 clone のリポジトリを clone し、既に clone 済みのリポジトリはスキップする。すべての処理は非同期で実行されるため、Emacs を通常通り操作できる。
 
 ## 必要なもの
 
@@ -14,10 +14,10 @@ GitHub を操作するための Emacs パッケージ。
 
 ```
 github.el/
-├── init.el                    # エントリポイント (use-package 設定)
+├── init.el                          # エントリポイント (use-package 設定)
 ├── src/
-│   ├── github-variables.el    # 共通変数 (github-variable-*)
-│   └── github-clone-all.el    # clone 機能
+│   ├── github-variables.el          # 共通変数 (github-variable-*)
+│   └── github-sync-repositories.el  # リポジトリ同期機能
 ├── README.md
 └── CLAUDE.md
 ```
@@ -46,24 +46,24 @@ github.el/
   (github-variable-use-ssh t)
   (github-variable-max-parallel 4))
 
-;; clone 機能
-(use-package github-clone-all
+;; リポジトリ同期機能
+(use-package github-sync-repositories
   :ensure nil
   :load-path "~/.emacs.d/dist/github.el/src/"
-  :commands (github-clone-all
-             github-clone-all-list
-             github-clone-all-cancel))
+  :commands (github-sync-repositories
+             github-sync-repositories-list
+             github-sync-repositories-cancel))
 ```
 
 - `github-variables` — 共通変数を定義。`:custom` で値を設定する
-- `github-clone-all` — clone 機能。`:commands` で遅延読み込みされる
+- `github-sync-repositories` — リポジトリ同期機能。`:commands` で遅延読み込みされる
 
 ### require を使う場合
 
 ```elisp
 (add-to-list 'load-path "~/.emacs.d/dist/github.el/src/")
 (require 'github-variables)
-(require 'github-clone-all)
+(require 'github-sync-repositories)
 ```
 
 ## 設定
@@ -98,7 +98,7 @@ machine api.github.com password ghp_xxxxxxxxxxxx
 (setq github-variable-directory "~/repos/")
 ```
 
-設定しておくと `M-x github-clone-all` 実行時にミニバッファで入力せずにそのまま使われる。未設定の場合は毎回ミニバッファで入力を求められる。
+設定しておくと `M-x github-sync-repositories` 実行時にミニバッファで入力せずにそのまま使われる。未設定の場合は毎回ミニバッファで入力を求められる。
 
 ### SSH / HTTPS の切り替え
 
@@ -119,31 +119,34 @@ machine api.github.com password ghp_xxxxxxxxxxxx
 
 ## 使い方
 
-### 全リポジトリをクローン
+### リポジトリを同期
 
 ```
-M-x github-clone-all
+M-x github-sync-repositories
 ```
 
-`github-variable-directory` が設定済みならそのディレクトリに、未設定ならミニバッファで入力したディレクトリに、自分がオーナーのリポジトリをすべて非同期でクローンする。既にクローン済みのリポジトリはスキップされる。
+`github-variable-directory` が設定済みならそのディレクトリに、未設定ならミニバッファで入力したディレクトリに、自分がオーナーのリポジトリを同期する。
 
-進捗は `*github-clone-all*` バッファとミニバッファにリアルタイム表示される。
+- 未 clone のリポジトリ → git clone を実行
+- clone 済みのリポジトリ → スキップ (何もしない)
+
+進捗は `*github-sync-repositories*` バッファとミニバッファにリアルタイム表示される。
 
 ### リポジトリ一覧を確認
 
 ```
-M-x github-clone-all-list
+M-x github-sync-repositories-list
 ```
 
-クローンせずにリポジトリ一覧を `*github-repos*` バッファに表示する。アーカイブ済み・フォークにはラベルが付く。
+同期せずにリポジトリ一覧を `*github-repos*` バッファに表示する。アーカイブ済み・フォークにはラベルが付く。
 
-### クローンをキャンセル
+### 同期をキャンセル
 
 ```
-M-x github-clone-all-cancel
+M-x github-sync-repositories-cancel
 ```
 
-実行中のクローン処理をすべて中止する。
+実行中の同期処理をすべて中止する。
 
 ## カスタマイズ変数
 
@@ -159,10 +162,12 @@ M-x github-clone-all-cancel
 ## 動作の流れ
 
 1. `url-retrieve` で GraphQL API にリポジトリ一覧を非同期リクエスト (100件ずつページネーション)
-2. 全ページ取得完了後、クローンキューを開始
-3. `make-process` で git clone を非同期実行 (最大 `github-variable-max-parallel` 件並列)
-4. 各プロセス完了時に次のリポジトリをキューから取り出して起動
-5. 全件完了後、結果サマリー (クローン数 / スキップ数 / 失敗数) を `*github-clone-all*` バッファに表示
+2. 全ページ取得完了後、同期キューを開始
+3. 各リポジトリについて:
+   - `.git` ディレクトリが存在する → スキップ
+   - 存在しない → `make-process` で git clone を非同期実行
+4. 最大 `github-variable-max-parallel` 件を並列処理し、完了時に次のリポジトリをキューから取り出して起動
+5. 全件完了後、結果サマリー (クローン数 / スキップ数 / 失敗数) を `*github-sync-repositories*` バッファに表示
 
 ## ライセンス
 

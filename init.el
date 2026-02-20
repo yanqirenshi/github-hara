@@ -17,12 +17,12 @@
   (github-variable-use-ssh t)
   (github-variable-max-parallel 4))
 
-;; clone 機能
-(use-package github-clone-all
+;; リポジトリ同期機能
+(use-package github-sync-repositories
   :ensure nil
   :load-path "~/.emacs.d/dist/github.el/src/"
-  :commands (github-clone-all
-             github-clone-all-list
-             github-clone-all-cancel))
+  :commands (github-sync-repositories
+             github-sync-repositories-list
+             github-sync-repositories-cancel))
 
 ;;; init.el ends here
