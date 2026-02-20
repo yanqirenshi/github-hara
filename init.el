@@ -7,15 +7,22 @@
 
 ;;; Code:
 
+;; 共通変数
+(use-package github-variables
+  :ensure nil
+  :load-path "~/.emacs.d/dist/github.el/src/"
+  :custom
+  (github-variable-token (auth-source-pick-first-password :host "api.github.com"))
+  (github-variable-directory "~/repos/")
+  (github-variable-use-ssh t)
+  (github-variable-max-parallel 4))
+
+;; clone 機能
 (use-package github-clone-all
   :ensure nil
   :load-path "~/.emacs.d/dist/github.el/src/"
   :commands (github-clone-all
              github-clone-all-list
-             github-clone-all-cancel)
-  :custom
-  (github-clone-all-token (auth-source-pick-first-password :host "api.github.com"))
-  (github-clone-all-use-ssh t)
-  (github-clone-all-max-parallel 4))
+             github-clone-all-cancel))
 
 ;;; init.el ends here

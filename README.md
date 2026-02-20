@@ -1,8 +1,8 @@
-# github-clone-all.el
+# github.el
 
-GitHub GraphQL API (v4) を使い、自分がオーナーのリポジトリをすべて一括クローンする Emacs パッケージ。
+GitHub を操作するための Emacs パッケージ。
 
-すべての処理は非同期で実行されるため、クローン中も Emacs を通常通り操作できる。
+現在は GitHub GraphQL API (v4) を使ったリポジトリの一括クローン機能を提供する。すべての処理は非同期で実行されるため、Emacs を通常通り操作できる。
 
 ## 必要なもの
 
@@ -16,7 +16,8 @@ GitHub GraphQL API (v4) を使い、自分がオーナーのリポジトリを�
 github.el/
 ├── init.el                    # エントリポイント (use-package 設定)
 ├── src/
-│   └── github-clone-all.el    # ソースコード本体
+│   ├── github-variables.el    # 共通変数 (github-variable-*)
+│   └── github-clone-all.el    # clone 機能
 ├── README.md
 └── CLAUDE.md
 ```
@@ -32,34 +33,42 @@ github.el/
 (load "~/.emacs.d/dist/github.el/init.el")
 ```
 
-`init.el` の中身は以下の use-package 設定:
+`init.el` の中身:
 
 ```elisp
+;; 共通変数
+(use-package github-variables
+  :ensure nil
+  :load-path "~/.emacs.d/dist/github.el/src/"
+  :custom
+  (github-variable-token (auth-source-pick-first-password :host "api.github.com"))
+  (github-variable-directory "~/repos/")
+  (github-variable-use-ssh t)
+  (github-variable-max-parallel 4))
+
+;; clone 機能
 (use-package github-clone-all
   :ensure nil
   :load-path "~/.emacs.d/dist/github.el/src/"
   :commands (github-clone-all
              github-clone-all-list
-             github-clone-all-cancel)
-  :custom
-  (github-clone-all-token (auth-source-pick-first-password :host "api.github.com"))
-  (github-clone-all-use-ssh t)
-  (github-clone-all-max-parallel 4))
+             github-clone-all-cancel))
 ```
 
-- **`:ensure nil`** — ローカルパッケージなので MELPA からのインストールを抑制
-- **`:load-path`** — `src/` ディレクトリをパスに追加
-- **`:commands`** — 遅延読み込み。コマンド実行時に初めてロードされる
-- **`:custom`** — カスタマイズ変数の設定
+- `github-variables` — 共通変数を定義。`:custom` で値を設定する
+- `github-clone-all` — clone 機能。`:commands` で遅延読み込みされる
 
 ### require を使う場合
 
 ```elisp
 (add-to-list 'load-path "~/.emacs.d/dist/github.el/src/")
+(require 'github-variables)
 (require 'github-clone-all)
 ```
 
 ## 設定
+
+共通変数はすべて `github-variable-*` という名前で `github-variables.el` に定義されている。
 
 ### トークン
 
@@ -72,7 +81,7 @@ machine api.github.com password ghp_xxxxxxxxxxxx
 `use-package` の `:custom` で `auth-source-pick-first-password` を使うことで、起動時に自動取得される。
 
 ```elisp
-(github-clone-all-token (auth-source-pick-first-password :host "api.github.com"))
+(github-variable-token (auth-source-pick-first-password :host "api.github.com"))
 ```
 
 **注意**: トークンをバージョン管理にコミットしないこと。`~/.authinfo.gpg` で GPG 暗号化して管理することを推奨する。
@@ -80,24 +89,32 @@ machine api.github.com password ghp_xxxxxxxxxxxx
 直接設定する場合:
 
 ```elisp
-(setq github-clone-all-token "ghp_xxxxxxxxxxxx")
+(setq github-variable-token "ghp_xxxxxxxxxxxx")
 ```
+
+### 操作先ディレクトリ
+
+```elisp
+(setq github-variable-directory "~/repos/")
+```
+
+設定しておくと `M-x github-clone-all` 実行時にミニバッファで入力せずにそのまま使われる。未設定の場合は毎回ミニバッファで入力を求められる。
 
 ### SSH / HTTPS の切り替え
 
 ```elisp
 ;; SSH (デフォルト)
-(setq github-clone-all-use-ssh t)
+(setq github-variable-use-ssh t)
 
 ;; HTTPS
-(setq github-clone-all-use-ssh nil)
+(setq github-variable-use-ssh nil)
 ```
 
 ### 並列数
 
 ```elisp
-;; 同時に実行する git clone の最大数 (デフォルト: 4)
-(setq github-clone-all-max-parallel 4)
+;; 同時に実行するプロセスの最大数 (デフォルト: 4)
+(setq github-variable-max-parallel 4)
 ```
 
 ## 使い方
@@ -108,7 +125,7 @@ machine api.github.com password ghp_xxxxxxxxxxxx
 M-x github-clone-all
 ```
 
-クローン先ディレクトリを指定すると、自分がオーナーのリポジトリをすべて非同期でクローンする。既にクローン済みのリポジトリはスキップされる。
+`github-variable-directory` が設定済みならそのディレクトリに、未設定ならミニバッファで入力したディレクトリに、自分がオーナーのリポジトリをすべて非同期でクローンする。既にクローン済みのリポジトリはスキップされる。
 
 進捗は `*github-clone-all*` バッファとミニバッファにリアルタイム表示される。
 
@@ -130,17 +147,20 @@ M-x github-clone-all-cancel
 
 ## カスタマイズ変数
 
+共通変数 (`github-variables.el`):
+
 | 変数 | デフォルト | 説明 |
 |------|-----------|------|
-| `github-clone-all-token` | `nil` | GitHub パーソナルアクセストークン |
-| `github-clone-all-use-ssh` | `t` | `t` なら SSH、`nil` なら HTTPS |
-| `github-clone-all-max-parallel` | `4` | 同時実行する git clone の最大数 |
+| `github-variable-token` | `nil` | GitHub パーソナルアクセストークン |
+| `github-variable-directory` | `nil` | 操作先ディレクトリ |
+| `github-variable-use-ssh` | `t` | `t` なら SSH、`nil` なら HTTPS |
+| `github-variable-max-parallel` | `4` | 同時実行するプロセスの最大数 |
 
 ## 動作の流れ
 
 1. `url-retrieve` で GraphQL API にリポジトリ一覧を非同期リクエスト (100件ずつページネーション)
 2. 全ページ取得完了後、クローンキューを開始
-3. `make-process` で git clone を非同期実行 (最大 `github-clone-all-max-parallel` 件並列)
+3. `make-process` で git clone を非同期実行 (最大 `github-variable-max-parallel` 件並列)
 4. 各プロセス完了時に次のリポジトリをキューから取り出して起動
 5. 全件完了後、結果サマリー (クローン数 / スキップ数 / 失敗数) を `*github-clone-all*` バッファに表示
 
