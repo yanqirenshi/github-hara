@@ -41,10 +41,9 @@
 
 ;;; Code:
 
-(require 'url)
-(require 'json)
 (require 'cl-lib)
 (require 'github-variables)
+(require 'github-api)
 
 (defconst github-sync-repositories--graphql-query
   "query($cursor: String) {
@@ -96,55 +95,6 @@
       (insert msg "\n"))))
 
 ;;; ============================================================
-;;; Async GraphQL request
-;;; ============================================================
-
-(defun github-sync-repositories--ensure-token ()
-  "Ensure that `github-variable-token' is set."
-  (unless github-variable-token
-    (error "`github-variable-token' is not set")))
-
-(defun github-sync-repositories--parse-response (buffer)
-  "Parse HTTP response from BUFFER and return JSON.
-Signal an error if the response contains errors."
-  (with-current-buffer buffer
-    (goto-char (point-min))
-    (re-search-forward "\n\n" nil t)
-    (let* ((response (json-read))
-           (errors (alist-get 'errors response)))
-      (when errors
-        (error "GitHub API error: %s"
-               (mapconcat (lambda (e) (alist-get 'message e))
-                          errors ", ")))
-      response)))
-
-(defun github-sync-repositories--graphql-request-async (query variables callback)
-  "Send async request to GitHub GraphQL API.
-QUERY is a GraphQL query string.  VARIABLES is an alist of variables.
-CALLBACK is called with the response as (lambda (response) ...)."
-  (github-sync-repositories--ensure-token)
-  (let* ((url-request-method "POST")
-         (url-request-extra-headers
-          `(("Authorization" . ,(concat "bearer " github-variable-token))
-            ("Content-Type" . "application/json")))
-         (payload (json-encode `((query . ,query)
-                                 (variables . ,(or variables :null)))))
-         (url-request-data (encode-coding-string payload 'utf-8)))
-    (url-retrieve
-     "https://api.github.com/graphql"
-     (lambda (status cb)
-       (if (plist-get status :error)
-           (progn
-             (github-sync-repositories--log "API request failed: %s"
-                                    (plist-get status :error))
-             (kill-buffer (current-buffer)))
-         (let ((response (github-sync-repositories--parse-response (current-buffer))))
-           (kill-buffer (current-buffer))
-           (funcall cb response))))
-     (list callback)
-     t t)))
-
-;;; ============================================================
 ;;; Async pagination: fetch all repositories
 ;;; ============================================================
 
@@ -157,7 +107,7 @@ Call CALLBACK with the list of repos when done."
   "Fetch one page from CURSOR, accumulate in ACC, recurse if more pages.
 Call CALLBACK when all pages are fetched."
   (let ((variables (if cursor `((cursor . ,cursor)) nil)))
-    (github-sync-repositories--graphql-request-async
+    (github-api--graphql-request-async
      github-sync-repositories--graphql-query
      variables
      (lambda (response)
@@ -171,7 +121,9 @@ Call CALLBACK when all pages are fetched."
          (github-sync-repositories--log "Fetching repositories... %d" (length new-acc))
          (if has-next
              (github-sync-repositories--fetch-page-async end-cursor new-acc callback)
-           (funcall callback new-acc)))))))
+           (funcall callback new-acc))))
+     (lambda (err)
+       (github-sync-repositories--log "API request failed: %s" err))))))
 
 ;;; ============================================================
 ;;; Async git clone with concurrency limit
@@ -270,7 +222,7 @@ If both are nil, prompt in the minibuffer."
       (error "Sync directory is not specified"))
     (when github-sync-repositories--current-state
       (error "Sync operation already in progress"))
-    (github-sync-repositories--ensure-token)
+    (github-api--ensure-token)
     (with-current-buffer (get-buffer-create "*github-sync-repositories*")
       (erase-buffer))
     (github-sync-repositories--log "Fetching repository list from GitHub...")
@@ -293,7 +245,7 @@ If both are nil, prompt in the minibuffer."
 (defun github-sync-repositories-list ()
   "Display a list of all owned repositories (does not clone)."
   (interactive)
-  (github-sync-repositories--ensure-token)
+  (github-api--ensure-token)
   (github-sync-repositories--log "Fetching repository list from GitHub...")
   (github-sync-repositories--fetch-all-repos-async
    (lambda (repos)

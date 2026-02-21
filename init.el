@@ -25,4 +25,11 @@
              github-sync-repositories-list
              github-sync-repositories-cancel))
 
+;; 空リポジトリ検出機能
+(use-package github-empty-repositories
+  :ensure nil
+  :load-path "~/.emacs.d/dist/github.el/src/"
+  :commands (github-empty-repositories
+             github-empty-repositories-local))
+
 ;;; init.el ends here

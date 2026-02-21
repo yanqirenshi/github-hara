@@ -2,7 +2,7 @@
 
 GitHub を操作するための Emacs パッケージ。
 
-現在は GitHub GraphQL API (v4) を使ったリポジトリの同期機能を提供する。未 clone のリポジトリを clone し、既に clone 済みのリポジトリはスキップする。すべての処理は非同期で実行されるため、Emacs を通常通り操作できる。
+GitHub GraphQL API (v4) を使い、リポジトリの同期や空リポジトリの検出などの機能を提供する。すべての API 通信は非同期で実行されるため、Emacs を通常通り操作できる。
 
 ## 必要なもの
 
@@ -14,12 +14,14 @@ GitHub を操作するための Emacs パッケージ。
 
 ```
 github.el/
-├── init.el                          # エントリポイント (use-package 設定)
+├── init.el                              # エントリポイント (use-package 設定)
 ├── src/
-│   ├── github-variables.el          # 共通変数 (github-variable-*)
-│   └── github-sync-repositories.el  # リポジトリ同期機能
+│   ├── github-api.el                    # GraphQL API 共通基盤
+│   ├── github-variables.el              # 共通変数 (github-variable-*)
+│   ├── github-sync-repositories.el      # リポジトリ同期機能
+│   └── github-empty-repositories.el     # 空リポジトリ検出機能
 ├── README.md
-└── CLAUDE.md
+└── LICENSE
 ```
 
 ## インストール
@@ -53,17 +55,23 @@ github.el/
   :commands (github-sync-repositories
              github-sync-repositories-list
              github-sync-repositories-cancel))
-```
 
-- `github-variables` — 共通変数を定義。`:custom` で値を設定する
-- `github-sync-repositories` — リポジトリ同期機能。`:commands` で遅延読み込みされる
+;; 空リポジトリ検出機能
+(use-package github-empty-repositories
+  :ensure nil
+  :load-path "~/.emacs.d/dist/github.el/src/"
+  :commands (github-empty-repositories
+             github-empty-repositories-local))
+```
 
 ### require を使う場合
 
 ```elisp
 (add-to-list 'load-path "~/.emacs.d/dist/github.el/src/")
 (require 'github-variables)
+(require 'github-api)
 (require 'github-sync-repositories)
+(require 'github-empty-repositories)
 ```
 
 ## 設定
@@ -98,7 +106,7 @@ machine api.github.com password ghp_xxxxxxxxxxxx
 (setq github-variable-directory "~/repos/")
 ```
 
-設定しておくと `M-x github-sync-repositories` 実行時にミニバッファで入力せずにそのまま使われる。未設定の場合は毎回ミニバッファで入力を求められる。
+設定しておくと各コマンド実行時にミニバッファで入力せずにそのまま使われる。未設定の場合は毎回ミニバッファで入力を求められる。
 
 ### SSH / HTTPS の切り替え
 
@@ -125,7 +133,7 @@ machine api.github.com password ghp_xxxxxxxxxxxx
 M-x github-sync-repositories
 ```
 
-`github-variable-directory` が設定済みならそのディレクトリに、未設定ならミニバッファで入力したディレクトリに、自分がオーナーのリポジトリを同期する。
+自分がオーナーのリポジトリを指定ディレクトリに同期する。
 
 - 未 clone のリポジトリ → git clone を実行
 - clone 済みのリポジトリ → スキップ (何もしない)
@@ -148,6 +156,31 @@ M-x github-sync-repositories-cancel
 
 実行中の同期処理をすべて中止する。
 
+### 空リポジトリを検出
+
+```
+M-x github-empty-repositories
+```
+
+GitHub 上とローカルディレクトリの両方で空リポジトリを検出し、`*github-empty-repositories*` バッファに一覧表示する。
+
+**GitHub 上の空リポジトリ**: コミットが一つもないリポジトリ (`defaultBranchRef` が null)。
+
+**ローカルの空リポジトリ**: 以下の3パターンを検出する。
+- `[空ディレクトリ]` — ディレクトリ内にファイルがない
+- `[.git なし]` — ディレクトリは存在するが git リポジトリではない
+- `[コミットなし]` — `.git` は存在するが HEAD が解決できない
+
+リモートとローカルの両方で空のリポジトリがある場合は、別セクションにも表示される。
+
+### ローカルのみ空リポジトリを検出
+
+```
+M-x github-empty-repositories-local
+```
+
+ローカルディレクトリのみをチェックする。GitHub API を使用しないため、トークンが不要。
+
 ## カスタマイズ変数
 
 共通変数 (`github-variables.el`):
@@ -159,15 +192,54 @@ M-x github-sync-repositories-cancel
 | `github-variable-use-ssh` | `t` | `t` なら SSH、`nil` なら HTTPS |
 | `github-variable-max-parallel` | `4` | 同時実行するプロセスの最大数 |
 
-## 動作の流れ
+## モジュール構成
 
-1. `url-retrieve` で GraphQL API にリポジトリ一覧を非同期リクエスト (100件ずつページネーション)
-2. 全ページ取得完了後、同期キューを開始
-3. 各リポジトリについて:
-   - `.git` ディレクトリが存在する → スキップ
-   - 存在しない → `make-process` で git clone を非同期実行
-4. 最大 `github-variable-max-parallel` 件を並列処理し、完了時に次のリポジトリをキューから取り出して起動
-5. 全件完了後、結果サマリー (クローン数 / スキップ数 / 失敗数) を `*github-sync-repositories*` バッファに表示
+| モジュール | 説明 |
+|------------|------|
+| `github-variables` | 全機能で共有する defcustom 変数 |
+| `github-api` | GraphQL API の非同期リクエスト基盤 |
+| `github-sync-repositories` | リポジトリ同期 (clone 済みスキップ、未 clone を clone) |
+| `github-empty-repositories` | 空リポジトリ検出 (GitHub + ローカル) |
+
+## 開発者向け
+
+### Claude Code スキル
+
+このプロジェクトには Claude Code のカスタムスキル (スラッシュコマンド) が含まれる。
+
+#### /update-operators
+
+`OPERATORS.md` (オペレータマニュアル) をソースコードから自動生成・更新する。
+
+```
+/update-operators                                           # src/ 内の全ファイルを走査して更新
+/update-operators src/github-api.el                         # 指定ファイルのみ更新
+/update-operators github-empty-repositories-filter-empty    # 指定関数のみ更新
+```
+
+ソースコード内の `defun`, `defcustom`, `defvar`, `defconst`, `cl-defstruct` を解析し、Common Lisp HyperSpec スタイルのドキュメントを OPERATORS.md に反映する。新規関数は追記、既存は更新、削除された関数は除去される。
+
+### テスト
+
+`test/` ディレクトリに ERT (Emacs Lisp Regression Testing) によるユニットテストがある。
+
+```elisp
+;; Emacs 内で全テストを実行
+(dolist (f '("test/test-github-variables.el"
+             "test/test-github-api.el"
+             "test/test-github-empty-repositories.el"
+             "test/test-github-sync-repositories.el"))
+  (load (expand-file-name f "~/.emacs.d/dist/github.el/")))
+(ert-run-tests-interactively t)
+```
+
+### ドキュメント
+
+| ファイル | 内容 |
+|----------|------|
+| `README.md` | ユーザー向けドキュメント |
+| `OPERATORS.md` | オペレータ (関数・変数) マニュアル |
+| `CLAUDE.md` | Claude Code への指示 |
 
 ## ライセンス
 
