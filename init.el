@@ -38,4 +38,10 @@
   :load-path "~/.emacs.d/dist/github.el/src/"
   :commands (github-behind-repositories))
 
+;; 孤立リポジトリ検出機能
+(use-package github-orphan-repositories
+  :ensure nil
+  :load-path "~/.emacs.d/dist/github.el/src/"
+  :commands (github-orphan-repositories))
+
 ;;; init.el ends here

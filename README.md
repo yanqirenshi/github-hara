@@ -1,4 +1,4 @@
-# github-hara
+# github-sitter
 
 GitHub を操作するための Emacs パッケージ。
 
@@ -20,7 +20,8 @@ github.el/
 │   ├── github-variables.el              # 共通変数 (github-variable-*)
 │   ├── github-sync-repositories.el      # リポジトリ同期機能
 │   ├── github-empty-repositories.el     # 空リポジトリ検出機能
-│   └── github-behind-repositories.el    # pull が必要なリポジトリ検出機能
+│   ├── github-behind-repositories.el    # pull が必要なリポジトリ検出機能
+│   └── github-orphan-repositories.el    # 孤立リポジトリ検出機能
 ├── README.md
 └── LICENSE
 ```
@@ -69,6 +70,12 @@ github.el/
   :ensure nil
   :load-path "~/.emacs.d/dist/github.el/src/"
   :commands (github-behind-repositories))
+
+;; 孤立リポジトリ検出機能
+(use-package github-orphan-repositories
+  :ensure nil
+  :load-path "~/.emacs.d/dist/github.el/src/"
+  :commands (github-orphan-repositories))
 ```
 
 ### require を使う場合
@@ -80,6 +87,7 @@ github.el/
 (require 'github-sync-repositories)
 (require 'github-empty-repositories)
 (require 'github-behind-repositories)
+(require 'github-orphan-repositories)
 ```
 
 ## 設定
@@ -206,6 +214,18 @@ M-x github-behind-repositories
 
 GitHub API は使用しないため、トークンが不要。
 
+### 孤立リポジトリを検出
+
+```
+M-x github-orphan-repositories
+```
+
+ローカルにクローン済みだが、GitHub 上にもう存在しないリポジトリ (削除済み・移譲済みなど) を検出し、`*github-orphan-repositories*` バッファに一覧表示する。
+
+GitHub GraphQL API から自分がオーナーのリポジトリ名一覧を取得し、ローカルの git リポジトリと比較する。
+
+**注意**: `ownerAffiliations: [OWNER]` でフィルタしているため、コラボレータ権限のみのリポジトリや Organization リポジトリは GitHub 側に含まれない。これらは孤立と誤判定される可能性がある。
+
 ## カスタマイズ変数
 
 共通変数 (`github-variables.el`):
@@ -226,6 +246,7 @@ GitHub API は使用しないため、トークンが不要。
 | `github-sync-repositories` | リポジトリ同期 (clone 済みスキップ、未 clone を clone) |
 | `github-empty-repositories` | 空リポジトリ検出 (GitHub + ローカル) |
 | `github-behind-repositories` | pull が必要なリポジトリ検出 (ローカル) |
+| `github-orphan-repositories` | 孤立リポジトリ検出 (GitHub + ローカル比較) |
 
 ## 開発者向け
 
@@ -255,7 +276,8 @@ GitHub API は使用しないため、トークンが不要。
              "test/test-github-api.el"
              "test/test-github-empty-repositories.el"
              "test/test-github-sync-repositories.el"
-             "test/test-github-behind-repositories.el"))
+             "test/test-github-behind-repositories.el"
+             "test/test-github-orphan-repositories.el"))
   (load (expand-file-name f "~/.emacs.d/dist/github.el/")))
 (ert-run-tests-interactively t)
 ```

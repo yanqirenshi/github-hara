@@ -1397,3 +1397,349 @@ dir の git 状態を解析する。以下の手順で判定を行う:
 `defconst` / 値: `"*github-behind-repositories*"`
 
 結果表示用バッファの名前。
+
+---
+
+## src/github-orphan-repositories.el
+
+ローカルにクローン済みだが、GitHub 上にもう存在しないリポジトリ (孤立リポジトリ) を検出する機能。GitHub GraphQL API でオーナーのリポジトリ名一覧を取得し、ローカルの git リポジトリと比較する。検出関数はリストを返し、表示は別関数で行う。
+
+### github-orphan-repositories
+
+#### Syntax:
+
+```elisp
+(github-orphan-repositories &optional target-dir)
+```
+
+#### Arguments and Values:
+
+- **target-dir** — チェック対象ディレクトリのパス (省略可)
+
+#### Description:
+
+`M-x github-orphan-repositories`
+
+GitHub API から自分がオーナーのリポジトリ名一覧を非同期取得し、target-dir 直下のローカル git リポジトリと比較する。ローカルにあるが GitHub 上に存在しないリポジトリを `*github-orphan-repositories*` バッファに一覧表示する。
+
+target-dir 省略時は `github-variable-directory` を使用し、それも `nil` ならミニバッファで入力を求める。
+
+#### Examples:
+
+```elisp
+;; ディレクトリを指定して実行
+(github-orphan-repositories "~/repos/")
+
+;; github-variable-directory を使用
+(let ((github-variable-directory "~/repos/"))
+  (github-orphan-repositories))
+
+;; M-x で対話的に実行
+M-x github-orphan-repositories
+```
+
+#### Affected By:
+
+`github-variable-token`, `github-variable-directory`
+
+#### Exceptional Situations:
+
+- target-dir が未指定かつ `github-variable-directory` も `nil` でミニバッファ入力もない場合、エラーを signal する
+- `github-variable-token` が `nil` の場合、エラーを signal する
+
+#### See Also:
+
+`github-orphan-repositories-find-orphans`, `github-orphan-repositories-display`
+
+#### Notes:
+
+インタラクティブコマンド。`;;;###autoload` 付き。`ownerAffiliations: [OWNER]` でフィルタするため、コラボレータ権限のみのリポジトリや Organization リポジトリは GitHub 側に含まれず、孤立と誤判定される可能性がある。
+
+---
+
+### github-orphan-repositories-find-orphans
+
+#### Syntax:
+
+```elisp
+(github-orphan-repositories-find-orphans callback &optional target-dir)
+```
+
+#### Arguments and Values:
+
+- **callback** — 孤立リポジトリ検出完了時のコールバック。引数は名前文字列のリスト: `(lambda (orphans) ...)`
+- **target-dir** — チェック対象ディレクトリのパス (省略可)。省略時は `github-variable-directory`
+
+#### Description:
+
+GitHub API から全リポジトリ名を非同期取得し、target-dir 直下のローカル git リポジトリ名と比較する。ローカルにあるが GitHub 上にないリポジトリ名のリストを callback に渡す。
+
+#### Examples:
+
+```elisp
+(github-orphan-repositories-find-orphans
+ (lambda (orphans)
+   (dolist (name orphans)
+     (message "Orphan: %s" name)))
+ "~/repos/")
+
+;; github-variable-directory を使用
+(let ((github-variable-directory "~/repos/"))
+  (github-orphan-repositories-find-orphans
+   (lambda (orphans)
+     (message "%d orphans found" (length orphans)))))
+```
+
+#### Affected By:
+
+`github-variable-token`, `github-variable-directory` (target-dir 省略時)
+
+#### Exceptional Situations:
+
+- target-dir が `nil` かつ `github-variable-directory` も `nil` の場合、エラーを signal する
+- `github-variable-token` が `nil` の場合、エラーを signal する
+
+#### See Also:
+
+`github-orphan-repositories--collect-local-repos`, `github-orphan-repositories--find-orphans`, `github-orphan-repositories-display`
+
+#### Notes:
+
+非同期関数。結果はコールバックで返される。
+
+---
+
+### github-orphan-repositories-display
+
+#### Syntax:
+
+```elisp
+(github-orphan-repositories-display orphans target-dir)
+```
+
+#### Arguments and Values:
+
+- **orphans** — 孤立リポジトリ名の文字列リスト
+- **target-dir** — チェック対象ディレクトリのパス (表示用)
+
+#### Description:
+
+検出結果を `*github-orphan-repositories*` バッファに表示する。バッファは毎回初期化される。孤立リポジトリがない場合は「すべてのローカルリポジトリは GitHub 上に存在します。」と表示する。末尾に `ownerAffiliations` による制限の注意事項を表示する。
+
+#### Examples:
+
+```elisp
+(github-orphan-repositories-display '("deleted-repo" "old-project") "~/repos/")
+;; => *github-orphan-repositories* バッファに以下を表示:
+;;    === GitHub 上に存在しないローカルリポジトリ一覧 ===
+;;
+;;    対象ディレクトリ: ~/repos/
+;;
+;;    2 件の孤立リポジトリが見つかりました:
+;;
+;;      deleted-repo
+;;      old-project
+```
+
+#### Affected By:
+
+なし。
+
+#### Exceptional Situations:
+
+なし。
+
+#### See Also:
+
+`github-orphan-repositories`, `github-orphan-repositories-find-orphans`
+
+#### Notes:
+
+`display-buffer` でバッファを表示する。検出ロジックとは分離されている。
+
+---
+
+### github-orphan-repositories--fetch-all-repos-async
+
+#### Syntax:
+
+```elisp
+(github-orphan-repositories--fetch-all-repos-async callback)
+```
+
+#### Arguments and Values:
+
+- **callback** — 全リポジトリ名取得完了時のコールバック。引数は名前文字列のリスト: `(lambda (names) ...)`
+
+#### Description:
+
+GitHub GraphQL API からオーナーのリポジトリ名一覧をページネーション (100 件/ページ) 付きで非同期取得する。全ページ取得完了後、名前のリストを callback に渡す。
+
+#### Examples:
+
+```elisp
+(github-orphan-repositories--fetch-all-repos-async
+ (lambda (names)
+   (message "Total: %d repos" (length names))))
+```
+
+#### Affected By:
+
+`github-variable-token`
+
+#### Exceptional Situations:
+
+API リクエスト失敗時はエラーを signal する。
+
+#### See Also:
+
+`github-orphan-repositories--fetch-page-async`, `github-api--graphql-request-async`
+
+#### Notes:
+
+内部関数。`github-orphan-repositories--fetch-page-async` に委譲する。
+
+---
+
+### github-orphan-repositories--fetch-page-async
+
+#### Syntax:
+
+```elisp
+(github-orphan-repositories--fetch-page-async cursor acc callback)
+```
+
+#### Arguments and Values:
+
+- **cursor** — ページネーションカーソル文字列。最初のページは `nil`
+- **acc** — これまでに蓄積した名前のリスト
+- **callback** — 全ページ取得完了時のコールバック
+
+#### Description:
+
+cursor 位置から 1 ページ (最大 100 件) のリポジトリ名を取得し、acc に蓄積する。`hasNextPage` が `t` なら `endCursor` で再帰し、`nil` なら callback を呼ぶ。
+
+#### Examples:
+
+```elisp
+(github-orphan-repositories--fetch-page-async nil '() #'my-callback)
+```
+
+#### Affected By:
+
+`github-variable-token`
+
+#### Exceptional Situations:
+
+API リクエスト失敗時はエラーを signal する。
+
+#### See Also:
+
+`github-orphan-repositories--fetch-all-repos-async`, `github-api--graphql-request-async`
+
+#### Notes:
+
+内部関数。再帰的にページを取得する。
+
+---
+
+### github-orphan-repositories--collect-local-repos
+
+#### Syntax:
+
+```elisp
+(github-orphan-repositories--collect-local-repos target-dir) → names
+```
+
+#### Arguments and Values:
+
+- **target-dir** — 走査対象の親ディレクトリ
+- **names** — `.git` を含むサブディレクトリ名の文字列リスト
+
+#### Description:
+
+target-dir 直下のサブディレクトリを走査し、`.git` ディレクトリを含むもの (git リポジトリ) の名前を返す。ドットで始まるディレクトリは無視する。
+
+#### Examples:
+
+```elisp
+(github-orphan-repositories--collect-local-repos "~/repos/")
+;; => ("my-project" "another-repo" "old-tool")
+```
+
+#### Affected By:
+
+なし。
+
+#### Exceptional Situations:
+
+なし。
+
+#### See Also:
+
+`github-orphan-repositories-find-orphans`
+
+#### Notes:
+
+内部関数。純粋な同期関数。
+
+---
+
+### github-orphan-repositories--find-orphans
+
+#### Syntax:
+
+```elisp
+(github-orphan-repositories--find-orphans remote-names local-names) → orphans
+```
+
+#### Arguments and Values:
+
+- **remote-names** — GitHub 上のリポジトリ名文字列リスト
+- **local-names** — ローカルのリポジトリ名文字列リスト
+- **orphans** — ローカルにあるが remote にない名前のリスト (アルファベット順ソート済み)
+
+#### Description:
+
+remote-names をハッシュテーブルに格納し、local-names のうち remote にないものを抽出して返す。結果はアルファベット順にソートされる。
+
+#### Examples:
+
+```elisp
+(github-orphan-repositories--find-orphans
+ '("repo-a" "repo-b" "repo-c")
+ '("repo-a" "repo-d" "repo-e"))
+;; => ("repo-d" "repo-e")
+```
+
+#### Affected By:
+
+なし。
+
+#### Exceptional Situations:
+
+なし。
+
+#### See Also:
+
+`github-orphan-repositories-find-orphans`
+
+#### Notes:
+
+内部関数。純粋関数。副作用なし。
+
+---
+
+### github-orphan-repositories--graphql-query
+
+`defconst` / GraphQL クエリ文字列
+
+孤立リポジトリ検出用のリポジトリ名取得クエリ。`name` フィールドのみを取得する軽量なクエリ。
+
+---
+
+### github-orphan-repositories--buffer-name
+
+`defconst` / 値: `"*github-orphan-repositories*"`
+
+結果表示用バッファの名前。
