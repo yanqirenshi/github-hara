@@ -32,4 +32,10 @@
   :commands (github-empty-repositories
              github-empty-repositories-local))
 
+;; pull が必要なリポジトリ検出機能
+(use-package github-behind-repositories
+  :ensure nil
+  :load-path "~/.emacs.d/dist/github.el/src/"
+  :commands (github-behind-repositories))
+
 ;;; init.el ends here

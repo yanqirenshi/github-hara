@@ -19,7 +19,8 @@ github.el/
 │   ├── github-api.el                    # GraphQL API 共通基盤
 │   ├── github-variables.el              # 共通変数 (github-variable-*)
 │   ├── github-sync-repositories.el      # リポジトリ同期機能
-│   └── github-empty-repositories.el     # 空リポジトリ検出機能
+│   ├── github-empty-repositories.el     # 空リポジトリ検出機能
+│   └── github-behind-repositories.el    # pull が必要なリポジトリ検出機能
 ├── README.md
 └── LICENSE
 ```
@@ -62,6 +63,12 @@ github.el/
   :load-path "~/.emacs.d/dist/github.el/src/"
   :commands (github-empty-repositories
              github-empty-repositories-local))
+
+;; pull が必要なリポジトリ検出機能
+(use-package github-behind-repositories
+  :ensure nil
+  :load-path "~/.emacs.d/dist/github.el/src/"
+  :commands (github-behind-repositories))
 ```
 
 ### require を使う場合
@@ -72,6 +79,7 @@ github.el/
 (require 'github-api)
 (require 'github-sync-repositories)
 (require 'github-empty-repositories)
+(require 'github-behind-repositories)
 ```
 
 ## 設定
@@ -181,6 +189,23 @@ M-x github-empty-repositories-local
 
 ローカルディレクトリのみをチェックする。GitHub API を使用しないため、トークンが不要。
 
+### pull が必要なリポジトリを検出
+
+```
+M-x github-behind-repositories
+```
+
+ローカルにクローン済みのリポジトリのうち、リモート追跡ブランチより遅れている (pull が必要な) ものを検出し、`*github-behind-repositories*` バッファに一覧表示する。
+
+各リポジトリについて以下の情報を表示する:
+- ブランチ名と追跡ブランチ名
+- リモートより遅れているコミット数
+- リモートより先行しているコミット数 (ある場合)
+
+**注意**: `git fetch` を実行しない場合、ローカルにキャッシュされたリモート情報に基づく判定となる。最新のリモート状態を反映するには、事前に `git fetch --all` を実行すること。
+
+GitHub API は使用しないため、トークンが不要。
+
 ## カスタマイズ変数
 
 共通変数 (`github-variables.el`):
@@ -200,6 +225,7 @@ M-x github-empty-repositories-local
 | `github-api` | GraphQL API の非同期リクエスト基盤 |
 | `github-sync-repositories` | リポジトリ同期 (clone 済みスキップ、未 clone を clone) |
 | `github-empty-repositories` | 空リポジトリ検出 (GitHub + ローカル) |
+| `github-behind-repositories` | pull が必要なリポジトリ検出 (ローカル) |
 
 ## 開発者向け
 
@@ -228,7 +254,8 @@ M-x github-empty-repositories-local
 (dolist (f '("test/test-github-variables.el"
              "test/test-github-api.el"
              "test/test-github-empty-repositories.el"
-             "test/test-github-sync-repositories.el"))
+             "test/test-github-sync-repositories.el"
+             "test/test-github-behind-repositories.el"))
   (load (expand-file-name f "~/.emacs.d/dist/github.el/")))
 (ert-run-tests-interactively t)
 ```

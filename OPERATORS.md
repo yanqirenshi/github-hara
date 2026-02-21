@@ -1122,3 +1122,278 @@ API リクエスト失敗時はエラーを signal する。
 #### Notes:
 
 内部関数。再帰的にページを取得する。
+
+---
+
+## src/github-behind-repositories.el
+
+ローカルにクローン済みのリポジトリのうち、リモート追跡ブランチより遅れている (pull が必要な) ものを検出する機能。検出関数はリストを返し、表示は別関数で行う。
+
+### github-behind-repositories
+
+#### Syntax:
+
+```elisp
+(github-behind-repositories &optional target-dir)
+```
+
+#### Arguments and Values:
+
+- **target-dir** — チェック対象ディレクトリのパス (省略可)
+
+#### Description:
+
+`M-x github-behind-repositories`
+
+target-dir 直下のサブディレクトリを走査し、リモート追跡ブランチより遅れている (pull が必要な) リポジトリを検出して `*github-behind-repositories*` バッファに一覧表示する。
+
+target-dir 省略時は `github-variable-directory` を使用し、それも `nil` ならミニバッファで入力を求める。
+
+#### Examples:
+
+```elisp
+;; ディレクトリを指定して実行
+(github-behind-repositories "~/repos/")
+
+;; github-variable-directory を使用
+(let ((github-variable-directory "~/repos/"))
+  (github-behind-repositories))
+
+;; M-x で対話的に実行
+M-x github-behind-repositories
+```
+
+#### Affected By:
+
+`github-variable-directory`
+
+#### Exceptional Situations:
+
+target-dir が未指定かつ `github-variable-directory` も `nil` でミニバッファ入力もない場合、エラーを signal する。
+
+#### See Also:
+
+`github-behind-repositories-find-behind-local`, `github-behind-repositories-display`, `github-behind-repositories-local-status`
+
+#### Notes:
+
+インタラクティブコマンド。`;;;###autoload` 付き。GitHub API は使用しない (トークン不要)。`git fetch` なしの場合、ローカルにキャッシュされたリモート情報に基づく判定となる。
+
+---
+
+### github-behind-repositories-local-status
+
+#### Syntax:
+
+```elisp
+(github-behind-repositories-local-status &optional dir) → status
+```
+
+#### Arguments and Values:
+
+- **dir** — チェック対象のリポジトリディレクトリ (省略可)。省略時は `github-variable-directory`
+- **status** — 以下のキーを持つ alist。git リポジトリでない場合や upstream 未設定の場合は `nil`
+
+| キー | 値 |
+|---|---|
+| `behind` | upstream より遅れているコミット数 (integer) |
+| `ahead` | upstream より先行しているコミット数 (integer) |
+| `branch` | 現在のブランチ名 (string) |
+| `upstream` | 追跡ブランチ名 (string) |
+
+#### Description:
+
+dir のリポジトリについて、現在のブランチとリモート追跡ブランチの差分を `git rev-list --count` で取得し、alist で返す。
+
+#### Examples:
+
+```elisp
+(github-behind-repositories-local-status "~/repos/my-project/")
+;; => ((behind . 3) (ahead . 0) (branch . "main") (upstream . "origin/main"))
+
+;; upstream がない場合
+(github-behind-repositories-local-status "~/repos/local-only/")
+;; => nil
+
+;; github-variable-directory を使用
+(let ((github-variable-directory "~/repos/my-project/"))
+  (github-behind-repositories-local-status))
+```
+
+#### Affected By:
+
+`github-variable-directory` (dir 省略時)
+
+#### Exceptional Situations:
+
+dir が `nil` かつ `github-variable-directory` も `nil` の場合、エラーを signal する。
+
+#### See Also:
+
+`github-behind-repositories-find-behind-local`, `github-behind-repositories--parse-status`
+
+#### Notes:
+
+`call-process` で git コマンドを同期実行するが、処理は瞬時に完了する。
+
+---
+
+### github-behind-repositories-find-behind-local
+
+#### Syntax:
+
+```elisp
+(github-behind-repositories-find-behind-local &optional target-dir) → result
+```
+
+#### Arguments and Values:
+
+- **target-dir** — 走査対象の親ディレクトリ (省略可)。省略時は `github-variable-directory`
+- **result** — `(name . status-alist)` のリスト。`behind > 0` のもののみ含む
+
+#### Description:
+
+target-dir 直下のサブディレクトリを走査し、リモート追跡ブランチより遅れているリポジトリを検出して返す。ドットで始まるディレクトリは無視する。git リポジトリでないディレクトリや upstream 未設定のリポジトリも結果に含まれない。
+
+#### Examples:
+
+```elisp
+(github-behind-repositories-find-behind-local "~/repos/")
+;; => (("project-a" . ((behind . 3) (ahead . 0) (branch . "main") (upstream . "origin/main")))
+;;     ("project-b" . ((behind . 1) (ahead . 2) (branch . "develop") (upstream . "origin/develop"))))
+
+;; 遅れているリポジトリがない場合
+(github-behind-repositories-find-behind-local "~/repos/")
+;; => nil
+
+;; github-variable-directory を使用
+(let ((github-variable-directory "~/repos/"))
+  (github-behind-repositories-find-behind-local))
+```
+
+#### Affected By:
+
+`github-variable-directory` (target-dir 省略時)
+
+#### Exceptional Situations:
+
+target-dir が `nil` かつ `github-variable-directory` も `nil` の場合、エラーを signal する。
+
+#### See Also:
+
+`github-behind-repositories-local-status`, `github-behind-repositories-display`, `github-behind-repositories--parse-status`
+
+#### Notes:
+
+同期関数。各サブディレクトリに対して `github-behind-repositories--parse-status` を呼ぶ。
+
+---
+
+### github-behind-repositories-display
+
+#### Syntax:
+
+```elisp
+(github-behind-repositories-display repos target-dir)
+```
+
+#### Arguments and Values:
+
+- **repos** — `(name . status-alist)` のリスト。各 status-alist には `behind`, `ahead`, `branch`, `upstream` を含む
+- **target-dir** — チェック対象ディレクトリのパス (表示用)
+
+#### Description:
+
+検出結果を `*github-behind-repositories*` バッファに表示する。バッファは毎回初期化される。
+
+各リポジトリについて、リポジトリ名、ブランチ名と追跡ブランチ名、遅れコミット数を表示する。ahead がある場合は先行コミット数も表示する。遅れているリポジトリがない場合は「すべてのリポジトリは最新です。」と表示する。
+
+#### Examples:
+
+```elisp
+(github-behind-repositories-display
+ '(("my-repo" . ((behind . 3) (ahead . 0) (branch . "main") (upstream . "origin/main"))))
+ "~/repos/")
+;; => *github-behind-repositories* バッファに以下を表示:
+;;    === pull が必要なリポジトリ一覧 ===
+;;
+;;    対象ディレクトリ: ~/repos/
+;;
+;;    1 件のリポジトリが遅れています:
+;;
+;;      my-repo
+;;        ブランチ: main → origin/main
+;;        遅れ: 3 コミット
+```
+
+#### Affected By:
+
+なし。
+
+#### Exceptional Situations:
+
+なし。
+
+#### See Also:
+
+`github-behind-repositories`, `github-behind-repositories-find-behind-local`
+
+#### Notes:
+
+`display-buffer` でバッファを表示する。検出ロジックとは分離されている。
+
+---
+
+### github-behind-repositories--parse-status
+
+#### Syntax:
+
+```elisp
+(github-behind-repositories--parse-status dir) → status
+```
+
+#### Arguments and Values:
+
+- **dir** — チェック対象のリポジトリディレクトリ
+- **status** — `(behind . N)`, `(ahead . N)`, `(branch . "name")`, `(upstream . "name")` を含む alist。git リポジトリでない場合や upstream 未設定の場合は `nil`
+
+#### Description:
+
+dir の git 状態を解析する。以下の手順で判定を行う:
+
+1. `git rev-parse --is-inside-work-tree` で git リポジトリか確認
+2. `git rev-parse --abbrev-ref HEAD` で現在のブランチ名を取得 (detached HEAD なら `nil`)
+3. `git rev-parse --abbrev-ref BRANCH@{upstream}` で upstream を取得 (未設定なら `nil`)
+4. `git rev-list --count HEAD..BRANCH@{upstream}` で遅れコミット数を取得
+5. `git rev-list --count BRANCH@{upstream}..HEAD` で先行コミット数を取得
+
+#### Examples:
+
+```elisp
+(github-behind-repositories--parse-status "~/repos/my-project/")
+;; => ((behind . 0) (ahead . 0) (branch . "main") (upstream . "origin/main"))
+```
+
+#### Affected By:
+
+なし。
+
+#### Exceptional Situations:
+
+なし (git コマンド失敗時は `nil` を返す)。
+
+#### See Also:
+
+`github-behind-repositories-local-status`, `github-behind-repositories-find-behind-local`
+
+#### Notes:
+
+内部関数。`call-process` で git コマンドを同期実行する。`cl-return-from` で早期リターンを行う。
+
+---
+
+### github-behind-repositories--buffer-name
+
+`defconst` / 値: `"*github-behind-repositories*"`
+
+結果表示用バッファの名前。
