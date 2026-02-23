@@ -123,7 +123,7 @@ Call CALLBACK when all pages are fetched."
              (github-sync-repositories--fetch-page-async end-cursor new-acc callback)
            (funcall callback new-acc))))
      (lambda (err)
-       (github-sync-repositories--log "API request failed: %s" err))))))
+       (github-sync-repositories--log "API request failed: %s" err)))))
 
 ;;; ============================================================
 ;;; Async git clone with concurrency limit
